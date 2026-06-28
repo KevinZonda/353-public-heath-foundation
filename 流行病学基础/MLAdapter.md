@@ -14,7 +14,7 @@
 | 偏倚  | Dataset Shift |
 | RR | effect size |
 | OR | odds transform |
-| 筛检灵敏度 | Recall |
+| 筛检灵敏度 | Recall/TPR |
 | 筛检特异度 | TNR/Specificity |
 | 阳性预测值 | Precision/PPV |
 | 标准化率 | Reweighting |
@@ -37,7 +37,7 @@ $$
 
 $$
 \begin{align*}
-Recall &= p(\text{pred} = +\ |\ \text{actual} = +)
+TPR = Recall &= p(\text{pred} = +\ |\ \text{actual} = +)
 \\
 Precision &=
 p(\text{actual} = + | \ \text{pred} = +)
@@ -45,7 +45,7 @@ p(\text{actual} = + | \ \text{pred} = +)
 TNR &= p(\text{pred} = - \ |\ \text{actual} = -)
 \\
 FPR &= p(\text{pred} = + \ |\ \text{actual} = -) = 1-TNR
-\end{align*} \\
+\end{align*}
 $$
 
 ## OR（Odds Ratio）
@@ -83,4 +83,27 @@ $$
   - 直觉：实验组的发生几率被严重压缩，说明该因素起到了“保护”作用。
   - 举个例子：如果计算出来经常运动的人，其患心脏病的 $OR = 0.3$。这意味着运动组的患病几率只有不运动组的 $30\%$（或者说，不运动组的患病几率是运动组的 $\frac{1}{0.3} \approx 3.33$ 倍）。
 
-## 
+## ROC, AUC
+
+| ![](img/roc/roc.png) | ![](img/roc/auc.png) |
+| :---: | :---: |
+| **ROC** | **AUC** |
+
+![](img/roc/analysis.png)
+
+$$
+ROC =
+\frac{TPR}{FPR}
+$$
+
+$$
+\begin{align*}
+TPR &= p(\text{pred} = +\ |\ \text{actual} = +)
+\\
+FPR &= p(\text{pred} = + \ |\ \text{actual} = -)
+\\
+ROC &= \frac
+{p(\text{pred} = +\ |\ \text{actual} = +)}
+{p(\text{pred} = + \ |\ \text{actual} = -)}
+\end{align*}
+$$
