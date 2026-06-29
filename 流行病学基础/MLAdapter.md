@@ -166,3 +166,46 @@ $$
 OR = \frac{Odds_1}{Odds_2} =
 \frac{\frac{P(E \mid  D)}{P(\neg E \mid  D)}}{\frac{P(E \mid \neg D)}{P(\neg E \mid \neg D)}}
 $$
+
+## $p$-Value
+
+![](img/p-value.png)
+
+假设原始假设 $H_0$ 成立情况下，当前样本结果出现的概率。
+
+$$
+p\text{-value} = P(X \geq x \mid H_0)
+$$
+- $H_0$: 原假设
+- $X$: 随机变量
+- $x$：观测到的实验结果
+- $X \geq x$: 现实生活比观测场景更极端的场景。
+
+显著性水平 $\alpha = 0.05$ 是用于标注统计显著性。
+
+- $p$值大（比如 $p > 0.05$）： 意味着在原假设成立时，这个结果很常见。我们没有理由拒绝原假设，也就是说，实验结果大概率是随机误差引起的（“没啥特别的”）。
+- $p$值小（比如 $p < 0.05$）： 意味着在原假设成立时，这个结果极罕见。我们选择拒绝原假设，接受备择假设（$H_1$），也就是说，结果具有显著性差异（“真有效果”）。
+
+## Confidence Interval (CI)
+
+CI 95%: 如果我们将相同的抽样实验重复做 100 次，大约有 95 次计算出的区间会包含真正的总体参数。 它反映了我们对这个估计范围的“把握程度”。
+
+$$
+CI_v = \bar{x} + Z \times \frac{s_v}{\sqrt n}
+$$
+
+- $\bar x$: sample mean
+- $Z$: CI 水平对应的 Z-score。对于 CI 95%，Z=1.96
+- $s$：样本标准差（Std Var）
+- $n$: sample size
+- $\frac{s_v}{\sqrt n}$: 标准误（Standard Error）
+
+样本标准差（抽样调查）：
+$$
+s = \sqrt{\frac{\sum^n_i (x_i - \bar{x})^2}{n-1}}
+$$
+
+总体标准差（所有数据）：
+$$
+s = \sqrt{\frac{\sum^n_i (x_i - \mu)^2}{N}}
+$$
