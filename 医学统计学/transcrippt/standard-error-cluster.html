@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>用重复样本 Cluster 理解 SD 与 SE</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f8fb;
+      --panel: #ffffff;
+      --text: #17191f;
+      --muted: #626976;
+      --border: #dfe3ea;
+      --grid: #e9ecf1;
+      --orange: #d97706;
+      --orange-soft: rgba(217, 119, 6, .12);
+      --blue: #2563eb;
+      --blue-soft: rgba(37, 99, 235, .14);
+      --green: #15803d;
+      --shadow: 0 10px 30px rgba(31, 41, 55, .08);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111318;
+        --panel: #191c23;
+        --text: #f2f4f8;
+        --muted: #aab1bd;
+        --border: #343944;
+        --grid: #292e37;
+        --orange: #ffb454;
+        --orange-soft: rgba(255, 180, 84, .13);
+        --blue: #76a7ff;
+        --blue-soft: rgba(118, 167, 255, .16);
+        --green: #66d98a;
+        --shadow: 0 10px 30px rgba(0, 0, 0, .22);
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      line-height: 1.55;
+    }
+
+    main {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 44px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.45rem, 2.5vw, 2.1rem);
+      font-weight: 650;
+      letter-spacing: -.02em;
+    }
+
+    .lead {
+      margin: 6px 0 22px;
+      color: var(--muted);
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(170px, 1fr)) auto;
+      gap: 14px;
+      align-items: end;
+      padding: 16px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+    }
+
+    label {
+      display: grid;
+      gap: 7px;
+      color: var(--muted);
+      font-size: .9rem;
+    }
+
+    label strong { color: var(--text); font-weight: 650; }
+    input[type="range"] { width: 100%; accent-color: var(--blue); }
+
+    button {
+      min-height: 40px;
+      padding: 0 16px;
+      border: 0;
+      border-radius: 9px;
+      background: var(--text);
+      color: var(--bg);
+      font: inherit;
+      font-weight: 650;
+      cursor: pointer;
+    }
+
+    button:hover { opacity: .88; }
+    button:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin: 14px 0 10px;
+    }
+
+    .metric {
+      color: var(--muted);
+      font-size: .9rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .metric strong {
+      display: block;
+      color: var(--text);
+      font-size: 1.08rem;
+    }
+
+    .plots {
+      display: grid;
+      grid-template-columns: minmax(0, 1.7fr) minmax(300px, .8fr);
+      gap: 16px;
+    }
+
+    figure {
+      margin: 0;
+      min-width: 0;
+      padding: 14px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+    }
+
+    figure h2 {
+      margin: 0 0 2px;
+      font-size: 1rem;
+      font-weight: 650;
+    }
+
+    .figure-subtitle {
+      margin: 0 0 5px;
+      color: var(--muted);
+      font-size: .84rem;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 420px;
+    }
+
+    figcaption {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: .86rem;
+    }
+
+    .equation-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    .note {
+      padding: 15px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+
+    .note h3 { margin: 0 0 5px; font-size: .96rem; }
+    .note p { margin: 0; color: var(--muted); font-size: .9rem; }
+
+    code {
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+
+    .takeaway {
+      margin: 16px 2px 5px;
+      font-weight: 650;
+    }
+
+    .caveat {
+      margin: 0 2px;
+      color: var(--muted);
+      font-size: .86rem;
+    }
+
+    @media (max-width: 850px) {
+      .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .plots { grid-template-columns: 1fr; }
+      .metrics { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 520px) {
+      main { width: min(100% - 20px, 1180px); padding-top: 18px; }
+      .controls, .equation-row { grid-template-columns: 1fr; }
+      button { width: 100%; }
+      canvas { height: 350px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>用重复样本 Cluster 理解 SD 与 SE</h1>
+    <p class="lead">总体固定为 <code>X ~ N(μ=50, σ²)</code>。每一列是一次独立抽样；列内观察个体，列间比较样本均数。</p>
+
+    <section class="controls" aria-label="模拟控制">
+      <label for="n-input">每个 cluster 的样本量 <strong>n = <span id="n-value">9</span></strong>
+        <input id="n-input" type="range" min="2" max="80" step="1" value="9">
+      </label>
+      <label for="sigma-input">总体标准差 <strong>σ = <span id="sigma-value">3.0</span></strong>
+        <input id="sigma-input" type="range" min="0.5" max="5" step="0.1" value="3">
+      </label>
+      <label for="m-input">独立重复样本数 <strong>M = <span id="m-value">24</span></strong>
+        <input id="m-input" type="range" min="8" max="40" step="1" value="24">
+      </label>
+      <button id="resample" type="button">重新抽样</button>
+    </section>
+
+    <section class="metrics" aria-live="polite">
+      <div class="metric">Cluster 内的 pooled SD<strong id="sd-metric">—</strong></div>
+      <div class="metric">Cluster 均数的经验 SE<strong id="se-empirical">—</strong></div>
+      <div class="metric">理论 SE = σ / √n<strong id="se-theory">—</strong></div>
+    </section>
+
+    <section class="plots">
+      <figure>
+        <h2>原始数据：看 cluster 内部</h2>
+        <p class="figure-subtitle">橙色圆点是个体；蓝色短线是每个 cluster 的样本均数。</p>
+        <canvas id="cluster-canvas" role="img" aria-label="多个独立样本 cluster 中的个体观测和各自样本均数"></canvas>
+        <figcaption>橙色 ±1 SD 带描述单个数据点的典型散布；改变 n 时，这条带不会收窄。</figcaption>
+      </figure>
+
+      <figure>
+        <h2>只保留各 cluster 的均数</h2>
+        <p class="figure-subtitle">一个蓝点对应左图一条蓝色均数短线。</p>
+        <canvas id="means-canvas" role="img" aria-label="各个独立样本均数的抽样分布和标准误带"></canvas>
+        <figcaption>蓝色 ±1 SE 带描述样本均数的散布；增加每个 cluster 的 n，这条带会收窄。</figcaption>
+      </figure>
+    </section>
+
+    <section class="equation-row">
+      <article class="note">
+        <h3>SD：一个人离总体均数多远</h3>
+        <p><code>SD(X) = σ</code>。它对应左图每一列内部橙色点的上下散布，也对应橙色的 <code>μ ± σ</code> 区域。</p>
+      </article>
+      <article class="note">
+        <h3>SE：一个样本均数离总体均数多远</h3>
+        <p><code>SE(X̄) = SD(X̄₁,…,X̄ₘ) = σ/√n</code>。它对应右图蓝点的上下散布与蓝色 <code>μ ± SE</code> 区域。</p>
+      </article>
+    </section>
+
+    <p class="takeaway">建议实验：保持 σ=3，只把 n 从 4 拖到 64。左图橙色点仍然很散，但右图蓝色均数会明显挤向 μ=50。</p>
+    <p class="caveat">这里的 “cluster” 只是一次次独立重复抽样的视觉分组，不是带组内相关性的 cluster sampling。</p>
+  </main>
+
+  <script>
+    (() => {
+      const MU = 50;
+      const MAX_N = 80;
+      const MAX_M = 40;
+      let seed = 3532026;
+      let normals = [];
+      let clusters = [];
+      let clusterMeans = [];
+      let pooledSd = 0;
+      let empiricalSe = 0;
+
+      const nInput = document.getElementById('n-input');
+      const sigmaInput = document.getElementById('sigma-input');
+      const mInput = document.getElementById('m-input');
+      const nValue = document.getElementById('n-value');
+      const sigmaValue = document.getElementById('sigma-value');
+      const mValue = document.getElementById('m-value');
+      const sdMetric = document.getElementById('sd-metric');
+      const seEmpirical = document.getElementById('se-empirical');
+      const seTheory = document.getElementById('se-theory');
+      const clusterCanvas = document.getElementById('cluster-canvas');
+      const meansCanvas = document.getElementById('means-canvas');
+
+      function color(name) {
+        return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      }
+
+      function mulberry32(seedValue) {
+        let state = seedValue >>> 0;
+        return () => {
+          state += 0x6D2B79F5;
+          let t = state;
+          t = Math.imul(t ^ (t >>> 15), t | 1);
+          t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+
+      function normal(random) {
+        const u = Math.max(random(), 1e-12);
+        return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * random());
+      }
+
+      function createNormalMatrix() {
+        const random = mulberry32(seed);
+        normals = Array.from({ length: MAX_M }, () =>
+          Array.from({ length: MAX_N }, () => normal(random))
+        );
+      }
+
+      function average(values) {
+        return values.reduce((sum, value) => sum + value, 0) / values.length;
+      }
+
+      function sampleSd(values) {
+        if (values.length < 2) return 0;
+        const mean = average(values);
+        return Math.sqrt(values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (values.length - 1));
+      }
+
+      function calculate() {
+        const n = Number(nInput.value);
+        const m = Number(mInput.value);
+        const sigma = Number(sigmaInput.value);
+        clusters = normals.slice(0, m).map(row => row.slice(0, n).map(z => MU + sigma * z));
+        clusterMeans = clusters.map(average);
+        let withinSs = 0;
+        for (let j = 0; j < m; j++) {
+          for (const value of clusters[j]) withinSs += (value - clusterMeans[j]) ** 2;
+        }
+        pooledSd = Math.sqrt(withinSs / (m * (n - 1)));
+        empiricalSe = sampleSd(clusterMeans);
+        nValue.textContent = n;
+        sigmaValue.textContent = sigma.toFixed(1);
+        mValue.textContent = m;
+        sdMetric.textContent = pooledSd.toFixed(2);
+        seEmpirical.textContent = empiricalSe.toFixed(2);
+        seTheory.textContent = (sigma / Math.sqrt(n)).toFixed(2);
+      }
+
+      function canvasContext(canvas) {
+        const dpr = Math.max(1, window.devicePixelRatio || 1);
+        const rect = canvas.getBoundingClientRect();
+        const width = Math.max(300, rect.width);
+        const height = Math.max(300, rect.height);
+        canvas.width = Math.round(width * dpr);
+        canvas.height = Math.round(height * dpr);
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        return { ctx, width, height };
+      }
+
+      function hash01(a, b) {
+        let x = Math.imul(a + 1, 0x45d9f3b) ^ Math.imul(b + 11, 0x119de1f3);
+        x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
+        return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
+      }
+
+      function niceTicks(min, max, count = 6) {
+        const raw = (max - min) / count;
+        const base = 10 ** Math.floor(Math.log10(Math.max(raw, 1e-9)));
+        const ratio = raw / base;
+        const step = (ratio >= 5 ? 5 : ratio >= 2 ? 2 : 1) * base;
+        const values = [];
+        for (let value = Math.ceil(min / step) * step; value <= max + step * .01; value += step) values.push(value);
+        return values;
+      }
+
+      function yDomain() {
+        const sigma = Number(sigmaInput.value);
+        const all = clusters.flat();
+        const lower = Math.min(...all, MU - 3.5 * sigma);
+        const upper = Math.max(...all, MU + 3.5 * sigma);
+        const pad = Math.max(.5, (upper - lower) * .04);
+        return [lower - pad, upper + pad];
+      }
+
+      function drawSharedAxes(ctx, width, height, margin, yScale, domain, showYLabels) {
+        const ticks = niceTicks(domain[0], domain[1]);
+        ctx.font = '12px system-ui, sans-serif';
+        ctx.lineWidth = 1;
+        for (const tick of ticks) {
+          const y = yScale(tick);
+          ctx.strokeStyle = color('--grid');
+          ctx.beginPath();
+          ctx.moveTo(margin.left, y);
+          ctx.lineTo(width - margin.right, y);
+          ctx.stroke();
+          if (showYLabels) {
+            ctx.fillStyle = color('--muted');
+            ctx.textAlign = 'right';
+            ctx.fillText(tick.toFixed(1), margin.left - 7, y + 4);
+          }
+        }
+        ctx.strokeStyle = color('--text');
+        ctx.beginPath();
+        ctx.moveTo(margin.left, margin.top);
+        ctx.lineTo(margin.left, height - margin.bottom);
+        ctx.lineTo(width - margin.right, height - margin.bottom);
+        ctx.stroke();
+      }
+
+      function drawBracket(ctx, x, yTop, yBottom, label, strokeColor, labelSide = 'right') {
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x - 5, yTop); ctx.lineTo(x + 5, yTop);
+        ctx.moveTo(x, yTop); ctx.lineTo(x, yBottom);
+        ctx.moveTo(x - 5, yBottom); ctx.lineTo(x + 5, yBottom);
+        ctx.stroke();
+        ctx.fillStyle = color('--text');
+        ctx.font = '600 12px system-ui, sans-serif';
+        ctx.textAlign = labelSide === 'right' ? 'left' : 'right';
+        ctx.fillText(label, labelSide === 'right' ? x + 8 : x - 8, (yTop + yBottom) / 2 + 4);
+      }
+
+      function drawClusterPlot(domain) {
+        const { ctx, width, height } = canvasContext(clusterCanvas);
+        const margin = { left: 51, right: 48, top: 25, bottom: 40 };
+        const plotW = width - margin.left - margin.right;
+        const plotH = height - margin.top - margin.bottom;
+        const m = clusters.length;
+        const sigma = Number(sigmaInput.value);
+        const yScale = y => margin.top + (domain[1] - y) / (domain[1] - domain[0]) * plotH;
+        const xScale = j => margin.left + (j + .5) / m * plotW;
+        ctx.clearRect(0, 0, width, height);
+
+        ctx.fillStyle = color('--orange-soft');
+        ctx.fillRect(margin.left, yScale(MU + sigma), plotW, yScale(MU - sigma) - yScale(MU + sigma));
+        drawSharedAxes(ctx, width, height, margin, yScale, domain, true);
+
+        ctx.strokeStyle = color('--green');
+        ctx.lineWidth = 2;
+        ctx.setLineDash([7, 5]);
+        ctx.beginPath();
+        ctx.moveTo(margin.left, yScale(MU));
+        ctx.lineTo(width - margin.right, yScale(MU));
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        const columnWidth = plotW / m;
+        const jitterWidth = Math.max(1.5, Math.min(10, columnWidth * .32));
+        ctx.fillStyle = color('--orange');
+        clusters.forEach((sample, j) => {
+          sample.forEach((value, i) => {
+            const x = xScale(j) + (hash01(j, i) - .5) * 2 * jitterWidth;
+            ctx.beginPath();
+            ctx.arc(x, yScale(value), Math.max(1.8, Math.min(3.2, columnWidth * .16)), 0, Math.PI * 2);
+            ctx.fill();
+          });
+        });
+
+        ctx.strokeStyle = color('--blue');
+        ctx.lineWidth = 3;
+        clusterMeans.forEach((value, j) => {
+          const half = Math.max(3, Math.min(9, columnWidth * .34));
+          ctx.beginPath();
+          ctx.moveTo(xScale(j) - half, yScale(value));
+          ctx.lineTo(xScale(j) + half, yScale(value));
+          ctx.stroke();
+        });
+
+        ctx.fillStyle = color('--muted');
+        ctx.font = '12px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        const every = m <= 16 ? 1 : m <= 28 ? 2 : 4;
+        for (let j = 0; j < m; j += every) ctx.fillText(String(j + 1), xScale(j), height - margin.bottom + 20);
+        ctx.fillText('独立样本 cluster 编号', margin.left + plotW / 2, height - 7);
+        ctx.save();
+        ctx.translate(13, margin.top + plotH / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.fillText('观测值 X', 0, 0);
+        ctx.restore();
+
+        drawBracket(ctx, width - margin.right + 18, yScale(MU + sigma), yScale(MU - sigma), '±1 SD', color('--orange'), 'left');
+
+        ctx.font = '12px system-ui, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = color('--orange');
+        ctx.fillText('● 个体', margin.left, 15);
+        ctx.fillStyle = color('--blue');
+        ctx.fillText('━ 样本均数', margin.left + 62, 15);
+        ctx.fillStyle = color('--green');
+        ctx.fillText('┄ 总体均数 μ', margin.left + 160, 15);
+      }
+
+      function drawMeansPlot(domain) {
+        const { ctx, width, height } = canvasContext(meansCanvas);
+        const margin = { left: 24, right: 67, top: 25, bottom: 40 };
+        const plotW = width - margin.left - margin.right;
+        const plotH = height - margin.top - margin.bottom;
+        const theorySe = Number(sigmaInput.value) / Math.sqrt(Number(nInput.value));
+        const yScale = y => margin.top + (domain[1] - y) / (domain[1] - domain[0]) * plotH;
+        ctx.clearRect(0, 0, width, height);
+
+        ctx.fillStyle = color('--blue-soft');
+        ctx.fillRect(margin.left, yScale(MU + theorySe), plotW, yScale(MU - theorySe) - yScale(MU + theorySe));
+        drawSharedAxes(ctx, width, height, margin, yScale, domain, false);
+
+        ctx.strokeStyle = color('--green');
+        ctx.lineWidth = 2;
+        ctx.setLineDash([7, 5]);
+        ctx.beginPath();
+        ctx.moveTo(margin.left, yScale(MU));
+        ctx.lineTo(width - margin.right, yScale(MU));
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        const center = margin.left + plotW / 2;
+        const cloudWidth = plotW * .66;
+        ctx.fillStyle = color('--blue');
+        clusterMeans.forEach((value, j) => {
+          const x = center + (hash01(j, 911) - .5) * cloudWidth;
+          ctx.beginPath();
+          ctx.arc(x, yScale(value), 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = color('--panel');
+          ctx.font = '9px system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(String(j + 1), x, yScale(value) + 3);
+          ctx.fillStyle = color('--blue');
+        });
+
+        drawBracket(ctx, width - margin.right + 22, yScale(MU + theorySe), yScale(MU - theorySe), '±1 SE', color('--blue'), 'left');
+
+        ctx.fillStyle = color('--muted');
+        ctx.font = '12px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('横向抖动仅用于避免蓝点重叠', margin.left + plotW / 2, height - 9);
+        ctx.fillStyle = color('--green');
+        ctx.textAlign = 'left';
+        ctx.fillText('┄ μ = 50', margin.left, 15);
+        ctx.fillStyle = color('--blue');
+        ctx.fillText('● 每个 cluster 的 X̄', margin.left + 74, 15);
+      }
+
+      function render() {
+        calculate();
+        const domain = yDomain();
+        drawClusterPlot(domain);
+        drawMeansPlot(domain);
+      }
+
+      function resample() {
+        seed = (seed + 104729) >>> 0;
+        createNormalMatrix();
+        render();
+      }
+
+      nInput.addEventListener('input', render);
+      sigmaInput.addEventListener('input', render);
+      mInput.addEventListener('input', render);
+      document.getElementById('resample').addEventListener('click', resample);
+      new ResizeObserver(render).observe(document.querySelector('.plots'));
+      matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
+      createNormalMatrix();
+      render();
+    })();
+  </script>
+</body>
+</html>
