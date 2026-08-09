@@ -101,20 +101,19 @@ $$
 $$
 
 > $$
-> \mathbb{E}(X_i) = \int^\infty_\infty x f_{X_i}(x) dx = \mu
+> \mathbb{E}(X_i) = \int^\infty_{-\infty} x f_{X_i}(x) dx = \mu
 > $$
->
-> 
 
 $$
 \begin{align*}
 Var(\bar{X}) &= Var{(\frac{1}{n}\sum X)}\\
 &= \frac{1}{n^2}\sum^n Var(X_i)\\
-&= \frac{1}{n^2} \sigma^2
+&= \frac{1}{n^2}n\sigma^2\\
+&= \frac{1}{n} \sigma^2
 \end{align*}
 $$
 
-so that $\bar{X} \sim \mathcal{N}(\mu, n^{-1}{\sigma^2})$, 其中 SE=$n^{-1}\sigma^2$
+so that $\bar{X} \sim \mathcal{N}(\mu, n^{-1}{\sigma^2})$, 其中 SE=$\sqrt{n^{-1}\sigma^2}$
 
 ## T 分布
 
@@ -160,8 +159,6 @@ $$
 > Var(X) &= \mathbb{E}[X^2]-[\mathbb{E}(X)]^2
 > \end{align*}
 > $$
->
-> 
 
 > $$
 > \begin{align*}
@@ -241,3 +238,4 @@ $$
 > $$
 > \boxed{ \mu\in \left[ \bar X-t_{n-1,1-\alpha/2}\frac{S}{\sqrt n}, \quad \bar X+t_{n-1,1-\alpha/2}\frac{S}{\sqrt n} \right] }
 > $$
+
