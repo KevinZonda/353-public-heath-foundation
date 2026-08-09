@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>用非线性回归理解标准误</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f8fb;
+      --panel: #ffffff;
+      --text: #17191f;
+      --muted: #626976;
+      --border: #dfe3ea;
+      --grid: #e9ecf1;
+      --blue: #2563eb;
+      --orange: #d97706;
+      --green: #15803d;
+      --blue-soft: rgba(37, 99, 235, .14);
+      --shadow: 0 10px 30px rgba(31, 41, 55, .08);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111318;
+        --panel: #191c23;
+        --text: #f2f4f8;
+        --muted: #aab1bd;
+        --border: #343944;
+        --grid: #292e37;
+        --blue: #76a7ff;
+        --orange: #ffb454;
+        --green: #66d98a;
+        --blue-soft: rgba(118, 167, 255, .16);
+        --shadow: 0 10px 30px rgba(0, 0, 0, .22);
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      line-height: 1.55;
+    }
+
+    main {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 44px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.45rem, 2.5vw, 2.1rem);
+      font-weight: 650;
+      letter-spacing: -.02em;
+    }
+
+    .lead {
+      margin: 6px 0 22px;
+      color: var(--muted);
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(170px, 1fr)) auto;
+      gap: 14px;
+      align-items: end;
+      padding: 16px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+    }
+
+    label {
+      display: grid;
+      gap: 7px;
+      color: var(--muted);
+      font-size: .9rem;
+    }
+
+    label strong { color: var(--text); font-weight: 600; }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--blue);
+    }
+
+    button {
+      min-height: 40px;
+      padding: 0 16px;
+      border: 0;
+      border-radius: 9px;
+      background: var(--text);
+      color: var(--bg);
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    button:hover { opacity: .88; }
+    button:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+
+    .metrics {
+      margin: 14px 2px 10px;
+      color: var(--muted);
+      font-size: .92rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .metrics strong { color: var(--text); }
+
+    .plots {
+      display: grid;
+      grid-template-columns: 1.35fr 1fr;
+      gap: 16px;
+    }
+
+    figure {
+      margin: 0;
+      padding: 14px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      min-width: 0;
+    }
+
+    figure h2 {
+      margin: 0 0 6px;
+      font-size: 1rem;
+      font-weight: 650;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 350px;
+    }
+
+    figcaption {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: .86rem;
+    }
+
+    .explanation {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    .note {
+      padding: 15px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+
+    .note h3 {
+      margin: 0 0 6px;
+      font-size: .96rem;
+    }
+
+    .note p {
+      margin: 0;
+      color: var(--muted);
+      font-size: .9rem;
+    }
+
+    code {
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+
+    .takeaway {
+      margin: 16px 2px 0;
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    @media (max-width: 850px) {
+      .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .plots { grid-template-columns: 1fr; }
+      .explanation { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 520px) {
+      main { width: min(100% - 20px, 1180px); padding-top: 18px; }
+      .controls { grid-template-columns: 1fr; }
+      button { width: 100%; }
+      canvas { height: 300px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>用非线性回归理解标准误</h1>
+    <p class="lead">模型：<code>y = c + A(1 − e<sup>−kx</sup>) + ε</code>。每次实验都从同一条真实曲线重新采样并重新拟合。</p>
+
+    <section class="controls" aria-label="模拟控制">
+      <label for="n-input">样本量 <strong>n = <span id="n-value">20</span></strong>
+        <input id="n-input" type="range" min="8" max="80" step="2" value="20">
+      </label>
+      <label for="sigma-input">单个观测的噪声 <strong>σ = <span id="sigma-value">1.0</span></strong>
+        <input id="sigma-input" type="range" min="0.2" max="2" step="0.1" value="1">
+      </label>
+      <label for="xstar-input">观察曲线的位置 <strong>x* = <span id="xstar-value">6.0</span></strong>
+        <input id="xstar-input" type="range" min="0" max="10" step="0.2" value="6">
+      </label>
+      <button id="resample" type="button">重新抽样</button>
+    </section>
+
+    <div id="metrics" class="metrics" aria-live="polite"></div>
+
+    <section class="plots">
+      <figure>
+        <h2>当前样本与拟合曲线</h2>
+        <canvas id="curve-canvas" role="img" aria-label="当前样本、真实非线性曲线、拟合曲线和重复抽样标准误带"></canvas>
+        <figcaption>橙色点是一次实验；蓝线是本次拟合；绿色虚线是真实曲线；淡蓝区域是重复实验得到的 ±1 SE。</figcaption>
+      </figure>
+      <figure>
+        <h2>固定 x* 后的抽样分布</h2>
+        <canvas id="hist-canvas" role="img" aria-label="重复实验在指定位置得到的曲线估计值直方图"></canvas>
+        <figcaption>重复 200 次“采样 → 拟合”，每次取出 ŷ(x*)。这些估计值的标准差就是该位置的标准误。</figcaption>
+      </figure>
+    </section>
+
+    <section class="explanation">
+      <article class="note">
+        <h3>SD：数据有多散</h3>
+        <p>描述单个观测值围绕曲线的波动。这里由噪声 σ 控制；增大 n 不会让每个点变得更贴近曲线。</p>
+      </article>
+      <article class="note">
+        <h3>SE：估计有多不稳</h3>
+        <p><code>SE[ŷ(x*)] = SD(重复实验得到的 ŷ(x*))</code>。样本越多，拟合曲线通常越稳定，SE 越小。</p>
+      </article>
+      <article class="note">
+        <h3>与 t 检验的关系</h3>
+        <p><code>t = (估计值 − H₀中的值) / SE</code>。SE 把原始差异换算成“相差多少个抽样波动尺度”。</p>
+      </article>
+    </section>
+
+    <p id="takeaway" class="takeaway"></p>
+  </main>
+
+  <script>
+    (() => {
+      const TRUE = { c: 1.5, a: 8, k: 0.45 };
+      const REPEATS = 200;
+      let seed = 20260810;
+      let currentData = [];
+      let currentFit = null;
+      let fits = [];
+      let timer = null;
+
+      const nInput = document.getElementById('n-input');
+      const sigmaInput = document.getElementById('sigma-input');
+      const xstarInput = document.getElementById('xstar-input');
+      const nValue = document.getElementById('n-value');
+      const sigmaValue = document.getElementById('sigma-value');
+      const xstarValue = document.getElementById('xstar-value');
+      const metrics = document.getElementById('metrics');
+      const takeaway = document.getElementById('takeaway');
+      const curveCanvas = document.getElementById('curve-canvas');
+      const histCanvas = document.getElementById('hist-canvas');
+
+      function css(name) {
+        return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      }
+
+      function model(x, p) {
+        return p.c + p.a * (1 - Math.exp(-p.k * x));
+      }
+
+      function rng(seedValue) {
+        let s = seedValue >>> 0;
+        return () => {
+          s += 0x6D2B79F5;
+          let t = s;
+          t = Math.imul(t ^ (t >>> 15), t | 1);
+          t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+
+      function normal(random) {
+        const u = Math.max(random(), 1e-12);
+        return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * random());
+      }
+
+      function makeData(n, sigma, seedValue) {
+        const random = rng(seedValue);
+        return Array.from({ length: n }, (_, i) => {
+          const base = 10 * i / (n - 1);
+          const jitter = i === 0 || i === n - 1 ? 0 : (random() - .5) * Math.min(.25, 3 / n);
+          const x = Math.max(0, Math.min(10, base + jitter));
+          return { x, y: model(x, TRUE) + sigma * normal(random) };
+        });
+      }
+
+      function solveAtK(data, k) {
+        let sy = 0, sg = 0, sgg = 0, sgy = 0;
+        for (const p of data) {
+          const g = 1 - Math.exp(-k * p.x);
+          sy += p.y; sg += g; sgg += g * g; sgy += g * p.y;
+        }
+        const n = data.length;
+        const det = n * sgg - sg * sg;
+        if (Math.abs(det) < 1e-12) return null;
+        const c = (sy * sgg - sg * sgy) / det;
+        const a = (n * sgy - sg * sy) / det;
+        let sse = 0;
+        for (const p of data) sse += (p.y - model(p.x, { c, a, k })) ** 2;
+        return { c, a, k, sse };
+      }
+
+      function fit(data) {
+        let low = .04, high = 1.6, best = null;
+        for (let round = 0; round < 4; round++) {
+          const steps = round ? 34 : 95;
+          const width = high - low;
+          for (let i = 0; i <= steps; i++) {
+            const candidate = solveAtK(data, low + width * i / steps);
+            if (candidate && (!best || candidate.sse < best.sse)) best = candidate;
+          }
+          const half = width / steps * 2.5;
+          low = Math.max(.01, best.k - half);
+          high = Math.min(2.5, best.k + half);
+        }
+        best.residualSd = Math.sqrt(best.sse / Math.max(1, data.length - 3));
+        return best;
+      }
+
+      const avg = values => values.reduce((a, b) => a + b, 0) / values.length;
+      function sd(values) {
+        const m = avg(values);
+        return Math.sqrt(values.reduce((s, v) => s + (v - m) ** 2, 0) / (values.length - 1));
+      }
+
+      function setupCanvas(canvas) {
+        const dpr = Math.max(1, window.devicePixelRatio || 1);
+        const rect = canvas.getBoundingClientRect();
+        const width = Math.max(300, rect.width);
+        const height = Math.max(260, rect.height);
+        canvas.width = Math.round(width * dpr);
+        canvas.height = Math.round(height * dpr);
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        return { ctx, width, height };
+      }
+
+      function line(ctx, points, xScale, yScale, color, width = 2, dash = []) {
+        ctx.beginPath();
+        points.forEach((p, i) => i ? ctx.lineTo(xScale(p.x), yScale(p.y)) : ctx.moveTo(xScale(p.x), yScale(p.y)));
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        ctx.setLineDash(dash);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      function axes(ctx, width, height, margin, xTicks, yTicks, xScale, yScale, xLabel, yLabel) {
+        ctx.font = '12px system-ui, sans-serif';
+        ctx.fillStyle = css('--muted');
+        ctx.strokeStyle = css('--grid');
+        ctx.lineWidth = 1;
+        ctx.textAlign = 'center';
+        for (const tick of xTicks) {
+          const x = xScale(tick);
+          ctx.beginPath(); ctx.moveTo(x, margin.top); ctx.lineTo(x, height - margin.bottom); ctx.stroke();
+          ctx.fillText(Number(tick).toFixed(Number.isInteger(tick) ? 0 : 1), x, height - margin.bottom + 19);
+        }
+        ctx.textAlign = 'right';
+        for (const tick of yTicks) {
+          const y = yScale(tick);
+          ctx.beginPath(); ctx.moveTo(margin.left, y); ctx.lineTo(width - margin.right, y); ctx.stroke();
+          ctx.fillText(Number(tick).toFixed(1), margin.left - 7, y + 4);
+        }
+        ctx.strokeStyle = css('--text');
+        ctx.beginPath();
+        ctx.moveTo(margin.left, margin.top); ctx.lineTo(margin.left, height - margin.bottom); ctx.lineTo(width - margin.right, height - margin.bottom);
+        ctx.stroke();
+        ctx.textAlign = 'center';
+        ctx.fillText(xLabel, margin.left + (width - margin.left - margin.right) / 2, height - 7);
+        ctx.save();
+        ctx.translate(13, margin.top + (height - margin.top - margin.bottom) / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.fillText(yLabel, 0, 0);
+        ctx.restore();
+      }
+
+      function ticks(min, max, count = 5) {
+        const raw = (max - min) / count;
+        const base = 10 ** Math.floor(Math.log10(Math.max(raw, 1e-9)));
+        const r = raw / base;
+        const step = (r >= 5 ? 5 : r >= 2 ? 2 : 1) * base;
+        const out = [];
+        for (let x = Math.ceil(min / step) * step; x <= max + step * .01; x += step) out.push(x);
+        return out;
+      }
+
+      function drawCurve() {
+        const { ctx, width, height } = setupCanvas(curveCanvas);
+        const margin = { left: 48, right: 15, top: 25, bottom: 38 };
+        const grid = Array.from({ length: 121 }, (_, i) => 10 * i / 120);
+        const summaries = grid.map(x => {
+          const values = fits.map(f => model(x, f));
+          const m = avg(values), se = sd(values);
+          return { x, m, lo: m - se, hi: m + se };
+        });
+        const ys = currentData.map(p => p.y);
+        summaries.forEach(p => ys.push(p.lo, p.hi));
+        let ymin = Math.min(...ys), ymax = Math.max(...ys);
+        const pad = Math.max(.6, (ymax - ymin) * .08);
+        ymin -= pad; ymax += pad;
+        const xs = x => margin.left + x / 10 * (width - margin.left - margin.right);
+        const yscl = y => margin.top + (ymax - y) / (ymax - ymin) * (height - margin.top - margin.bottom);
+        ctx.clearRect(0, 0, width, height);
+        axes(ctx, width, height, margin, [0, 2, 4, 6, 8, 10], ticks(ymin, ymax), xs, yscl, 'x', '响应 y');
+
+        ctx.beginPath();
+        summaries.forEach((p, i) => i ? ctx.lineTo(xs(p.x), yscl(p.hi)) : ctx.moveTo(xs(p.x), yscl(p.hi)));
+        [...summaries].reverse().forEach(p => ctx.lineTo(xs(p.x), yscl(p.lo)));
+        ctx.closePath(); ctx.fillStyle = css('--blue-soft'); ctx.fill();
+
+        line(ctx, grid.map(x => ({ x, y: model(x, TRUE) })), xs, yscl, css('--green'), 2, [7, 5]);
+        line(ctx, grid.map(x => ({ x, y: model(x, currentFit) })), xs, yscl, css('--blue'), 2.5);
+        ctx.fillStyle = css('--orange');
+        for (const p of currentData) {
+          ctx.beginPath(); ctx.arc(xs(p.x), yscl(p.y), 3.3, 0, Math.PI * 2); ctx.fill();
+        }
+        const xstar = Number(xstarInput.value);
+        ctx.strokeStyle = css('--text'); ctx.setLineDash([3, 4]);
+        ctx.beginPath(); ctx.moveTo(xs(xstar), margin.top); ctx.lineTo(xs(xstar), height - margin.bottom); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = css('--text'); ctx.font = '600 12px system-ui, sans-serif'; ctx.textAlign = 'left';
+        ctx.fillText(`x* = ${xstar.toFixed(1)}`, Math.min(xs(xstar) + 6, width - 68), margin.top + 13);
+      }
+
+      function drawHistogram() {
+        const { ctx, width, height } = setupCanvas(histCanvas);
+        const margin = { left: 44, right: 15, top: 35, bottom: 38 };
+        const xstar = Number(xstarInput.value);
+        const values = fits.map(f => model(xstar, f));
+        const m = avg(values), se = sd(values), truth = model(xstar, TRUE);
+        let xmin = Math.min(...values, m - 2.5 * se, truth), xmax = Math.max(...values, m + 2.5 * se, truth);
+        const pad = Math.max(.05, (xmax - xmin) * .08); xmin -= pad; xmax += pad;
+        const xs = x => margin.left + (x - xmin) / (xmax - xmin) * (width - margin.left - margin.right);
+        const bins = Array(18).fill(0);
+        values.forEach(v => bins[Math.max(0, Math.min(17, Math.floor((v - xmin) / (xmax - xmin) * 18)))]++);
+        const maxCount = Math.max(...bins);
+        const ys = y => margin.top + (maxCount - y) / maxCount * (height - margin.top - margin.bottom);
+        ctx.clearRect(0, 0, width, height);
+        axes(ctx, width, height, margin, ticks(xmin, xmax), ticks(0, maxCount, 4), xs, ys, '曲线估计 ŷ(x*)', '重复次数');
+
+        ctx.fillStyle = css('--blue-soft');
+        ctx.fillRect(xs(m - se), margin.top, xs(m + se) - xs(m - se), height - margin.top - margin.bottom);
+        const bw = (width - margin.left - margin.right) / bins.length;
+        ctx.fillStyle = css('--blue'); ctx.globalAlpha = .52;
+        bins.forEach((count, i) => ctx.fillRect(margin.left + i * bw + 1, ys(count), Math.max(1, bw - 2), height - margin.bottom - ys(count)));
+        ctx.globalAlpha = 1;
+
+        ctx.strokeStyle = css('--blue'); ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(xs(m), margin.top); ctx.lineTo(xs(m), height - margin.bottom); ctx.stroke();
+        ctx.strokeStyle = css('--green'); ctx.setLineDash([7, 5]);
+        ctx.beginPath(); ctx.moveTo(xs(truth), margin.top); ctx.lineTo(xs(truth), height - margin.bottom); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = css('--text'); ctx.font = '600 12px system-ui, sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(`SE = ${se.toFixed(2)}`, xs(m), height - margin.bottom - 9);
+        ctx.fillStyle = css('--muted'); ctx.font = '12px system-ui, sans-serif';
+        ctx.fillText(`均值 ${m.toFixed(2)}`, Math.max(48, Math.min(width - 48, xs(m))), 14);
+        ctx.fillText(`真实值 ${truth.toFixed(2)}`, Math.max(50, Math.min(width - 50, xs(truth))), 29);
+        return { m, se, truth };
+      }
+
+      function render() {
+        nValue.textContent = nInput.value;
+        sigmaValue.textContent = Number(sigmaInput.value).toFixed(1);
+        xstarValue.textContent = Number(xstarInput.value).toFixed(1);
+        drawCurve();
+        const summary = drawHistogram();
+        metrics.innerHTML = `单个观测的噪声 <strong>σ = ${Number(sigmaInput.value).toFixed(1)}</strong>　·　当前拟合残差 SD <strong>${currentFit.residualSd.toFixed(2)}</strong>　·　曲线估计的标准误 <strong>SE[ŷ(x*)] = ${summary.se.toFixed(2)}</strong>`;
+        takeaway.textContent = '建议实验：保持 σ 不变，只增大 n。橙色散点仍然同样“厚”，但淡蓝色 SE 带与右侧抽样分布会收窄。';
+      }
+
+      function simulate() {
+        const n = Number(nInput.value), sigma = Number(sigmaInput.value);
+        currentData = makeData(n, sigma, seed);
+        currentFit = fit(currentData);
+        fits = Array.from({ length: REPEATS }, (_, i) => fit(makeData(n, sigma, (seed + Math.imul(i + 1, 2654435761)) >>> 0)));
+        render();
+      }
+
+      function schedule() {
+        clearTimeout(timer);
+        timer = setTimeout(simulate, 80);
+      }
+
+      nInput.addEventListener('input', schedule);
+      sigmaInput.addEventListener('input', schedule);
+      xstarInput.addEventListener('input', render);
+      document.getElementById('resample').addEventListener('click', () => { seed = (seed + 104729) >>> 0; simulate(); });
+      new ResizeObserver(() => { if (fits.length) render(); }).observe(document.querySelector('.plots'));
+      matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (fits.length) render(); });
+      simulate();
+    })();
+  </script>
+</body>
+</html>
